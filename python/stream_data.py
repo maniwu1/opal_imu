@@ -1,13 +1,13 @@
 import apdm
-
+ 
 try:
     num_aps = apdm.uintArray(1)
     return_code = apdm.apdm_ap_get_num_access_points_on_host1(num_aps)
-    print("return code is " + str(return_code))
-    print("Number of APs on host is " + str(num_aps))
+    # print("return code is " + str(return_code))
+    # print("Number of APs on host is " + str(num_aps))
 
     context = apdm.apdm_ctx_allocate_new_context()
-    print(context)
+    # print(context)
     if context == None:
         raise Exception("unable to allocate new context")
     

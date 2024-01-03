@@ -425,7 +425,7 @@ def apdm_sensor_list_attached_sensors3_py():
   sn_buffer = uintArray(100)
   status, buffer_count = apdm_sensor_list_attached_sensors3(sn_buffer, 100)
 
-  print(status, buffer_count, type(sn_buffer))
+  print status, buffer_count, type(sn_buffer)
 
   # create a list with the populated elements of the buffer
   result = []
