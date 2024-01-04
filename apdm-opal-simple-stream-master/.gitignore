@@ -1,0 +1,9 @@
+# Mac OS
+.DS_Store
+
+# Python
+*.pyc
+
+# Logs and data
+*.csv
+*.log
