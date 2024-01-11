@@ -5,7 +5,9 @@ from simple_stream import sensor_config as SensorConfig
 from simple_stream import sensor_stream as SensorStream
 from simple_stream import stream_csv_writer as StreamCsvWriter
 from sklearn.decomposition import PCA
+from scipy.spatial.transform import Rotation as R
 import numpy as np
+import math
 
 class Opal:
     def __init__(self):
@@ -16,6 +18,8 @@ class Opal:
         self.update_rate = 100 # Hz
         self.dt = 1 / self.update_rate # seconds
         self.data = []
+        self.X = []
+        self.P = []
         self.n_sensors = None
         self.device_ids = None
 
@@ -25,6 +29,8 @@ class Opal:
         self.device_ids = self.stream.device_ids
         for device_id in self.device_ids:
             self.data.append(np.empty((0, 6)))                          # initialize list of empty arrays for data, 6 columns (x,y,z gyro and accel)
+            self.X.append(np.empty((0, 4)))                             # initialize list of empty arrays for quaternion states 
+            self.P.append(np.empty((4, 4, 0)))                          # initialize list of empty arrays for error covariance matrices
 
     def update_data(self):
         try:
@@ -41,7 +47,10 @@ class Opal:
             self.data[idx] = np.append(self.data[idx], device_data[2:7])   # only extract and store gyro and accel data 
             # need to limit array size to window_size
 
-    def EKF(self):
+    def _EKF(self):
+        """ Implementation of Extended Kalman Filter on IMU data (gyroscope and accelerometer). 
+        Returns X (quaternion array (N, 4)) and P (error covariance array (4, 4, N)). Quaternions are expressed in scalar-first notation as (w, x, y, z).
+        """
         for sensor in len(self.data):
             data = self.data[sensor]
             accl = data[:, 0:2]
@@ -116,7 +125,83 @@ class Opal:
                 X_all[i, :] = x
                 P_all[:, :, i] = P
 
-        return
+            # ========= Update X and P variables in Opal class =========
+            self.X[sensor] = X_all
+            self.P[sensor] = P_all
 
-    def calibrate_axis(self):
-        pass
+    def _quat2euler(quat_mat):
+        """
+        Convert quaternion matrix into euler angles.
+        
+        Input
+        ------
+        quat_mat: (N, 4) array of quaternions where N is the number of observations and the quaternions are expressed in scalar-first notation as (w, x, y, z)
+
+        Output
+        ------
+        eul_mat: (N, 3) array of euler angles where N is the number of observations and the euler angles are expressed as (X, Y, Z) rotations or (roll, pitch, yaw)
+        """
+        w = quat_mat[:,0]
+        x = quat_mat[:,1]
+        y = quat_mat[:,2]
+        z = quat_mat[:,3]
+        
+
+        t0 = 2.0 * (w*x + y*z)
+        t1 = 1.0 - 2.0 * (x*x + y*y)
+        rot_x = np.arctan2(t0, t1)
+
+        t2 = 2.0 * (w*y - z*x)
+        t2 = 1.0 if t2 > 1.0 else t2                                    # enforce max and min values of 1.0 and -1.0
+        t2 = -1.0 if t2 < 1.0 else t2
+        rot_y = np.arctan2(t2)
+
+        t3 = 2.0 * (w*z + x*y)
+        t4 = 1.0 - 2.0 * (y*y + z*z)
+        rot_z = np.arctan2(t3, t4)
+
+        eul_mat = np.hstack(rot_x, rot_y, rot_z)
+        return eul_mat
+    
+    def _rad2deg(rad):
+        """
+        Convert from radians to degrees.
+        """
+        return rad * 180.0 / np.pi
+    
+    def _quat2rot(quat):
+        """ 
+        Convert a quaternion (1, 4) to rotation matrix (3, 3). Input quaternions are expressed in scalar-first notation as (w, x, y, z).
+        """
+        quat_wlast = np.hstack([quat[1:], quat[0]])                     # convert to scalar-last notation for scipy Rotation function
+        r = R.from_quat(quat_wlast)
+        return r.as_matrix()
+    
+    def _angular_vel_wrt_frameA(R_A, R_B, gyro_A, gyro_B):
+        """ 
+        Finds the relative angular velocity with respect to frame A. Rotation matrices are (3, 3) arrays and gyroscope measurements are (1, 3) arrays.
+        Returns (1, 3) array for rotation about (x, y, z). 
+        """
+        R_BA = R_A @ R_B.T
+        w_rel_frameA = R_BA @ gyro_B.T - gyro_A.T
+        return np.reshape(w_rel_frameA, (1, 3))
+
+    def _pc_axis(w_rel_frame_array):
+        """ 
+        Used to calibrate axes using (N, 3) array of relative angular velocities with respect to a specific frame (i.e. thigh frame). 
+        Returns the first principal component of the data (encaptures highest variability) as the principal axis. 
+        """
+        pca = PCA(n_components=3)
+        pca.fit(w_rel_frame_array)
+        axis = pca.components_[0]
+
+        # Note: the estimated axis can converge to align with z or -z axis. Check if the axis is aligned with thigh z frame.
+        # If the angle between the thigh x and estimated axis is less than 100, then it converged to align with +x instead of -x axis.
+        cos_th = np.dot(axis, [1, 0, 0]) / (np.norm(axis) * np.norm([1, 0, 0]))
+        ang = np.arccos(cos_th) * 180 / np.pi
+
+        if ang < 100:
+            # axis converged to negative of the desired axis
+            axis = -1 * axis
+        
+        return axis
