@@ -22,6 +22,7 @@ class Opal:
         self.P = []
         self.n_sensors = None
         self.device_ids = None
+        self.device_labels = None
 
     def start_streaming(self):
         self.stream.start()
@@ -31,6 +32,7 @@ class Opal:
             self.data.append(np.empty((0, 6)))                          # initialize list of empty arrays for data, 6 columns (x,y,z gyro and accel)
             self.X.append(np.empty((0, 4)))                             # initialize list of empty arrays for quaternion states 
             self.P.append(np.empty((4, 4, 0)))                          # initialize list of empty arrays for error covariance matrices
+            ## need to match device ids with device labels (back, thigh, shank, foot for left and right )
 
     def update_data(self):
         try:
@@ -38,12 +40,14 @@ class Opal:
             self.logger.logger.debug("Received sensor data: {0}".format(sensor_data))
             self.csv_writer.write(sensor_data)
             self._append_data(sensor_data)
+            self._EKF
         except Exception as e:
             self.logger.logger.error("Could not retrieve sensor data. Error: {0}"
                 .format(e))
             
-    def calculate_joint_angle(self):
-        pass
+
+
+    ################################# INTERNAL FUNCTIONS ####################################
     
     def _append_data(self, sensor_data):
         for idx, device_data in enumerate(sensor_data):
@@ -173,20 +177,37 @@ class Opal:
     
     def _quat2rot(quat):
         """ 
-        Convert a quaternion (1, 4) to rotation matrix (3, 3). Input quaternions are expressed in scalar-first notation as (w, x, y, z).
+        Convert a quaternion (N, 4) to rotation matrix (N, 3, 3). Input quaternions are expressed in scalar-first notation as (w, x, y, z).
         """
-        quat_wlast = np.hstack([quat[1:], quat[0]])                     # convert to scalar-last notation for scipy Rotation function
+        quat_wlast = np.hstack([quat[:, 1:], quat[:, 0]])                   # convert to scalar-last notation for scipy Rotation function
         r = R.from_quat(quat_wlast)
-        return r.as_matrix()
+        return r.as_dcm()
     
     def _angular_vel_wrt_frameA(R_A, R_B, gyro_A, gyro_B):
         """ 
-        Finds the relative angular velocity with respect to IMU frame A. Rotation matrices are (3, 3) arrays and gyroscope measurements are (1, 3) arrays.
-        Returns (1, 3) array for rotation about (x, y, z). 
+        Finds the relative angular velocity with respect to IMU frame A. Rotation matrices are (N, 3, 3) arrays and gyroscope measurements are (N, 3) arrays.
+        Returns (N, 3) array for rotation about (x, y, z). 
         """
-        R_BA = R_A @ R_B.T
-        w_rel_frameA = R_BA @ gyro_B.T - gyro_A.T
-        return np.reshape(w_rel_frameA, (1, 3))
+        N, a, b = R_A.shape
+        gyro_A_ = gyro_A.reshape((N, 3, 1))
+        gyro_B_ = gyro_B.reshape((N, 3, 1))
+
+        R_BA = R_A @ np.transpose(R_B, (0, 2, 1))                           # transpose last two dimensions, results in (N, 3, 3)
+        w_rel_frameA = R_BA @ np.transpose(gyro_B_, (0, 2, 1)) - np.transpose(gyro_A_, (0, 2, 1))
+        return w_rel_frameA.reshape((-1, 3))
+    
+    def _angular_vel_wrt_frameB(R_A, R_B, gyro_A, gyro_B):
+        """ 
+        Finds the relative angular velocity with respect to IMU frame B. Rotation matrices are (N, 3, 3) arrays and gyroscope measurements are (N, 3) arrays.
+        Returns (N, 3) array for rotation about (x, y, z). 
+        """
+        N, a, b = R_A.shape
+        gyro_A_ = gyro_A.reshape((N, 3, 1))
+        gyro_B_ = gyro_B.reshape((N, 3, 1))
+
+        R_AB = R_B @ np.transpose(R_A, (0, 2, 1))  
+        w_rel_frameB = np.transpose(gyro_B_, (0, 2, 1)) - R_AB @ np.transpose(gyro_A_, (0, 2, 1))
+        return w_rel_frameB.reshape((-1, 3))
 
     def _pc_axis(w_rel_frame_array):
         """ 
@@ -242,5 +263,10 @@ class Opal:
         """
         Calculates Euler angles from rotation matrix. Expressed as (rot_Z, rot_X, rot_Y) or (yaw, pitch, roll).
         """
-        r = R.from_matrix(R_AA_AB)
+        r = R.from_dcm(R_AA_AB)
         return r.as_euler('zxy', degrees=True)
+    
+    def _calculate_joint_angle(self, sensor_A, sensor_B):
+        """ Calculates anatomical joint angle using sensors A and B. Joint angles are calculated from anatomical frame A to anatomical frame B.
+        """
+        
