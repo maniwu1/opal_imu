@@ -20,6 +20,7 @@ class Opal:
         self.data = []
         self.X = []
         self.P = []
+        self.IMU2anatomical_rot = dict()
         self.n_sensors = None
         self.device_ids = None
         self.device_labels = None
@@ -45,7 +46,23 @@ class Opal:
             self.logger.logger.error("Could not retrieve sensor data. Error: {0}"
                 .format(e))
             
+    def calibrate_axes(self):
+        ## Called during calibration procedures to find rotation matrix from IMU frame to anatomical frame. 
 
+        # Calculate left torso and hip rotation matrices
+
+
+        # Calculate left shank and ankle rotation matrices
+
+
+        # Calculate right torso and hip rotation matrices
+
+
+        # Calculate right shank and ankle rotation matrices 
+
+
+        
+        pass
 
     ################################# INTERNAL FUNCTIONS ####################################
     
@@ -136,7 +153,7 @@ class Opal:
             self.X[sensor] = X_all
             self.P[sensor] = P_all
 
-    def _quat2euler(quat_mat):
+    def _quat2euler(self, quat_mat):
         """
         Convert quaternion matrix into euler angles.
         
@@ -169,21 +186,22 @@ class Opal:
         eul_mat = np.hstack(rot_x, rot_y, rot_z)
         return eul_mat
     
-    def _rad2deg(rad):
+    def _rad2deg(self, rad):
         """
         Convert from radians to degrees.
         """
         return rad * 180.0 / np.pi
     
-    def _quat2rot(quat):
+    def _quat2rot(self, quat):
         """ 
         Convert a quaternion (N, 4) to rotation matrix (N, 3, 3). Input quaternions are expressed in scalar-first notation as (w, x, y, z).
+        Inputs may be 2d or 3d arrays.
         """
         quat_wlast = np.hstack([quat[:, 1:], quat[:, 0]])                   # convert to scalar-last notation for scipy Rotation function
         r = R.from_quat(quat_wlast)
         return r.as_dcm()
     
-    def _angular_vel_wrt_frameA(R_A, R_B, gyro_A, gyro_B):
+    def _angular_vel_wrt_frameA(self, R_A, R_B, gyro_A, gyro_B):
         """ 
         Finds the relative angular velocity with respect to IMU frame A. Rotation matrices are (N, 3, 3) arrays and gyroscope measurements are (N, 3) arrays.
         Returns (N, 3) array for rotation about (x, y, z). 
@@ -196,7 +214,7 @@ class Opal:
         w_rel_frameA = R_BA @ np.transpose(gyro_B_, (0, 2, 1)) - np.transpose(gyro_A_, (0, 2, 1))
         return w_rel_frameA.reshape((-1, 3))
     
-    def _angular_vel_wrt_frameB(R_A, R_B, gyro_A, gyro_B):
+    def _angular_vel_wrt_frameB(self, R_A, R_B, gyro_A, gyro_B):
         """ 
         Finds the relative angular velocity with respect to IMU frame B. Rotation matrices are (N, 3, 3) arrays and gyroscope measurements are (N, 3) arrays.
         Returns (N, 3) array for rotation about (x, y, z). 
@@ -209,7 +227,7 @@ class Opal:
         w_rel_frameB = np.transpose(gyro_B_, (0, 2, 1)) - R_AB @ np.transpose(gyro_A_, (0, 2, 1))
         return w_rel_frameB.reshape((-1, 3))
 
-    def _pc_axis(w_rel_frame_array):
+    def _pc_axis(self, w_rel_frame_array):
         """ 
         Used to find anatomical frame axis using (N, 3) array of relative angular velocities with respect to a specific IMU frame (i.e. thigh IMU frame). 
         Returns the first principal component of the data (encaptures highest variability) as the principal axis. 
@@ -227,8 +245,18 @@ class Opal:
             axis = -1 * axis
         
         return axis
+    
+    def _calculate_joint_axis(self, X_A, X_B, gyro_A, gyro_B):
+        R_A = self._quat2rot(X_A)
+        R_B = self._quat2rot(X_B)
+        w_rel_frameA = self._angular_vel_wrt_frameA(R_A, R_B, gyro_A, gyro_B)
+        w_rel_frameB = self._angular_vel_wrt_frameB(R_A, R_B, gyro_A, gyro_B)
+
+        axis_A = self._pc_axis(w_rel_frameA)
+        axis_B = self._pc_axis(w_rel_frameB)
+        return axis_A, axis_B
  
-    def _calc_rot_from_axis(axis):
+    def _calc_rot_from_axis(self, axis):
         """
         Use estimated (1, 3) axis to find appropriate (3, 3) rotation matrices. Assumes axis aligns with z-axis. 
         """
@@ -240,33 +268,39 @@ class Opal:
         
         return np.hstack(x_T, y_T, z_T)
     
-    def _rot_AA_2_AB(R_AA, R_AB, R_A, R_B):
+    def _rot_AA_2_AB(self, R_AA, R_AB, R_A, R_B):
         """
         Rotation from anatomical frame AA to anatomical frame AB. 
         
         Inputs
         -------
-        R_AA: rotation from IMU frame A to anatomical frame AA
-        R_AB: rotation from IMU frame B to anatomical frame AB
-        R_A: rotation from world frame to IMU frame A
-        R_B: rotation from world frame to IMU frame B
+        R_AA: (3, 3) rotation from IMU frame A to anatomical frame AA 
+        R_AB: (3, 3) rotation from IMU frame B to anatomical frame AB
+        R_A: (N, 3, 3) rotation from world frame to IMU frame A
+        R_B: (N, 3, 3) rotation from world frame to IMU frame B
 
         Outputs
         -------
         R_AA_AB: rotation from anatomical frame AA to anatomical frame AB
 
         """
-        R_AA_AB = R_AA.T @ R_A @ R_B.T @ R_AB
+        R_AA_AB = R_AA.T @ R_A @ np.transpose(R_B, (0, 2, 1)) @ R_AB
         return R_AA_AB
     
-    def _ang_from_rot(R_AA_AB):
+    def _ang_from_rot(self, R_AA_AB):
         """
         Calculates Euler angles from rotation matrix. Expressed as (rot_Z, rot_X, rot_Y) or (yaw, pitch, roll).
+        Inputs may be 2d or 3d arrays. 
         """
         r = R.from_dcm(R_AA_AB)
         return r.as_euler('zxy', degrees=True)
     
-    def _calculate_joint_angle(self, sensor_A, sensor_B):
-        """ Calculates anatomical joint angle using sensors A and B. Joint angles are calculated from anatomical frame A to anatomical frame B.
+    def _calculate_joint_angle(self, X_A, X_B, gyro_A, gyro_B, axis_A, axis_B):
+        """ Calculates anatomical joint angle using quaternions from sensors A and B. Joint angles are calculated from anatomical frame A to anatomical frame B.
         """
-        
+        R_A = self._quat2rot(X_A)
+        R_B = self._quat2rot(X_B)
+        w_rel_frameA = self._angular_vel_wrt_frameA(R_A, R_B, gyro_A, gyro_B)
+        w_rel_frameB = self._angular_vel_wrt_frameB(R_A, R_B, gyro_A, gyro_B)
+
+
