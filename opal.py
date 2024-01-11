@@ -41,6 +41,9 @@ class Opal:
         except Exception as e:
             self.logger.logger.error("Could not retrieve sensor data. Error: {0}"
                 .format(e))
+            
+    def calculate_joint_angle(self):
+        pass
     
     def _append_data(self, sensor_data):
         for idx, device_data in enumerate(sensor_data):
@@ -146,7 +149,6 @@ class Opal:
         y = quat_mat[:,2]
         z = quat_mat[:,3]
         
-
         t0 = 2.0 * (w*x + y*z)
         t1 = 1.0 - 2.0 * (x*x + y*y)
         rot_x = np.arctan2(t0, t1)
@@ -179,7 +181,7 @@ class Opal:
     
     def _angular_vel_wrt_frameA(R_A, R_B, gyro_A, gyro_B):
         """ 
-        Finds the relative angular velocity with respect to frame A. Rotation matrices are (3, 3) arrays and gyroscope measurements are (1, 3) arrays.
+        Finds the relative angular velocity with respect to IMU frame A. Rotation matrices are (3, 3) arrays and gyroscope measurements are (1, 3) arrays.
         Returns (1, 3) array for rotation about (x, y, z). 
         """
         R_BA = R_A @ R_B.T
@@ -188,7 +190,7 @@ class Opal:
 
     def _pc_axis(w_rel_frame_array):
         """ 
-        Used to calibrate axes using (N, 3) array of relative angular velocities with respect to a specific frame (i.e. thigh frame). 
+        Used to find anatomical frame axis using (N, 3) array of relative angular velocities with respect to a specific IMU frame (i.e. thigh IMU frame). 
         Returns the first principal component of the data (encaptures highest variability) as the principal axis. 
         """
         pca = PCA(n_components=3)
@@ -199,9 +201,46 @@ class Opal:
         # If the angle between the thigh x and estimated axis is less than 100, then it converged to align with +x instead of -x axis.
         cos_th = np.dot(axis, [1, 0, 0]) / (np.norm(axis) * np.norm([1, 0, 0]))
         ang = np.arccos(cos_th) * 180 / np.pi
-
         if ang < 100:
             # axis converged to negative of the desired axis
             axis = -1 * axis
         
         return axis
+ 
+    def _calc_rot_from_axis(axis):
+        """
+        Use estimated (1, 3) axis to find appropriate (3, 3) rotation matrices. Assumes axis aligns with z-axis. 
+        """
+        z_T = axis
+        y_init = [0, 1, 0]
+        x_T = np.cross(y_init, z_T)
+        x_T = x_T / np.norm(x_T)
+        y_T = np.cross(z_T, x_T)
+        
+        return np.hstack(x_T, y_T, z_T)
+    
+    def _rot_AA_2_AB(R_AA, R_AB, R_A, R_B):
+        """
+        Rotation from anatomical frame AA to anatomical frame AB. 
+        
+        Inputs
+        -------
+        R_AA: rotation from IMU frame A to anatomical frame AA
+        R_AB: rotation from IMU frame B to anatomical frame AB
+        R_A: rotation from world frame to IMU frame A
+        R_B: rotation from world frame to IMU frame B
+
+        Outputs
+        -------
+        R_AA_AB: rotation from anatomical frame AA to anatomical frame AB
+
+        """
+        R_AA_AB = R_AA.T @ R_A @ R_B.T @ R_AB
+        return R_AA_AB
+    
+    def _ang_from_rot(R_AA_AB):
+        """
+        Calculates Euler angles from rotation matrix. Expressed as (rot_Z, rot_X, rot_Y) or (yaw, pitch, roll).
+        """
+        r = R.from_matrix(R_AA_AB)
+        return r.as_euler('zxy', degrees=True)
