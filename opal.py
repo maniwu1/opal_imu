@@ -23,7 +23,7 @@ class Opal:
         self.IMU2anatomical_rot = dict()
         self.n_sensors = None
         self.device_ids = None
-        self.device_labels = None
+        self.device_labels = dict()
 
     def start_streaming(self):
         self.stream.start()
@@ -49,20 +49,35 @@ class Opal:
     def calibrate_axes(self):
         ## Called during calibration procedures to find rotation matrix from IMU frame to anatomical frame. 
 
-        # Calculate left torso and hip rotation matrices
+        # Calculate torso, left hip, and right hip rotation matrices
+        torso_idx = self.device_ids.index(self.device_labels['Torso'])
+        lthigh_idx = self.device_ids.index(self.device_labels['L Thigh'])
+        rthigh_idx = self.device_ids.index(self.device_labels['R Thigh'])
 
+        axis_torso, axis_lthigh = self._calculate_joint_axis(self.X[torso_idx], self.X[lthigh_idx], 
+                                                             self.data[torso_idx][:,0:2], self.data[lthigh_idx][:,0:2])
+        axis_torso2, axis_rthigh = self._calculate_joint_axis(self.X[torso_idx], self.X[rthigh_idx], 
+                                                             self.data[torso_idx][:,0:2], self.data[rthigh_idx][:,0:2])
+        
+        self.IMU2anatomical_rot['Torso'] = self._calc_rot_from_axis(axis_torso)
+        self.IMU2anatomical_rot['L Thigh'] = self._calc_rot_from_axis(axis_lthigh)
+        self.IMU2anatomical_rot['R Thigh'] = self._calc_rot_from_axis(axis_rthigh)
 
         # Calculate left shank and ankle rotation matrices
-
-
-        # Calculate right torso and hip rotation matrices
-
+        lshank_idx = self.device_ids.index(self.device_labels['L Shank'])
+        lfoot_idx = self.device_ids.index(self.device_labels['L Foot'])
+        axis_lshank, axis_lfoot = self._calculate_joint_axis(self.X[lshank_idx], self.X[lfoot_idx], 
+                                                             self.data[lshank_idx][:,0:2], self.data[lfoot_idx][:,0:2])
+        self.IMU2anatomical_rot['L Shank'] = self._calc_rot_from_axis(axis_lshank)
+        self.IMU2anatomical_rot['L Foot'] = self._calc_rot_from_axis(axis_lfoot)
 
         # Calculate right shank and ankle rotation matrices 
-
-
-        
-        pass
+        rshank_idx = self.device_ids.index(self.device_labels['R Shank'])
+        rfoot_idx = self.device_ids.index(self.device_labels['R Foot'])
+        axis_rshank, axis_rfoot = self._calculate_joint_axis(self.X[rshank_idx], self.X[rfoot_idx], 
+                                                             self.data[rshank_idx][:,0:2], self.data[rfoot_idx][:,0:2])
+        self.IMU2anatomical_rot['R Shank'] = self._calc_rot_from_axis(axis_rshank)
+        self.IMU2anatomical_rot['R Foot'] = self._calc_rot_from_axis(axis_rfoot)
 
     ################################# INTERNAL FUNCTIONS ####################################
     
