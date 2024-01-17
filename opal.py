@@ -204,7 +204,7 @@ class Opal:
             self.X[sensor] = X_all
             self.P[sensor] = P_all
 
-    def _quat2euler(self, quat_mat):
+    def _quat2euler(self, quat_mat, seq):
         """
         Convert quaternion matrix into euler angles.
         
@@ -238,7 +238,7 @@ class Opal:
         # return eul_mat
         quat_wlast = np.hstack([quat_mat[:, 1:], quat_mat[:, 0].reshape(-1, 1)])
         r = R.from_quat(quat_wlast)
-        return r.as_euler('xyz', degrees=True)
+        return r.as_euler(seq, degrees=True)
     
     def _rad2deg(self, rad):
         """
@@ -251,7 +251,7 @@ class Opal:
         Convert a quaternion (N, 4) to rotation matrix (N, 3, 3). Input quaternions are expressed in scalar-first notation as (w, x, y, z).
         Inputs may be 2d or 3d arrays.
         """
-        quat_wlast = np.hstack([quat[:, 1:], quat[:, 0]])                   # convert to scalar-last notation for scipy Rotation function
+        quat_wlast = np.hstack([quat[:, 1:], quat[:, 0].reshape(-1,1)])                   # convert to scalar-last notation for scipy Rotation function
         r = R.from_quat(quat_wlast)
         return r.as_dcm()
     
