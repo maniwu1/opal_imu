@@ -1,5 +1,6 @@
 import sys
 import csv
+# sys.path.append('../')
 from simple_stream import app_logger as AppLogger
 from simple_stream import sensor_config as SensorConfig
 from simple_stream import sensor_stream as SensorStream
@@ -59,9 +60,9 @@ class Opal:
         rthigh_idx = self.device_ids.index(self.device_labels['R Thigh'])
 
         axis_torso, axis_lthigh = self._calculate_joint_axis(self.X[torso_idx], self.X[lthigh_idx], 
-                                                             self.data[torso_idx][:,0:2], self.data[lthigh_idx][:,0:2])
+                                                             self.data[torso_idx][:,0:3], self.data[lthigh_idx][:,0:3])
         axis_torso2, axis_rthigh = self._calculate_joint_axis(self.X[torso_idx], self.X[rthigh_idx], 
-                                                             self.data[torso_idx][:,0:2], self.data[rthigh_idx][:,0:2])
+                                                             self.data[torso_idx][:,0:3], self.data[rthigh_idx][:,0:3])
         
         self.IMU2anatomical_rot['Torso'] = self._calc_rot_from_axis(axis_torso)
         self.IMU2anatomical_rot['L Thigh'] = self._calc_rot_from_axis(axis_lthigh)
@@ -71,7 +72,7 @@ class Opal:
         lshank_idx = self.device_ids.index(self.device_labels['L Shank'])
         lfoot_idx = self.device_ids.index(self.device_labels['L Foot'])
         axis_lshank, axis_lfoot = self._calculate_joint_axis(self.X[lshank_idx], self.X[lfoot_idx], 
-                                                             self.data[lshank_idx][:,0:2], self.data[lfoot_idx][:,0:2])
+                                                             self.data[lshank_idx][:,0:3], self.data[lfoot_idx][:,0:3])
         self.IMU2anatomical_rot['L Shank'] = self._calc_rot_from_axis(axis_lshank)
         self.IMU2anatomical_rot['L Foot'] = self._calc_rot_from_axis(axis_lfoot)
 
@@ -79,7 +80,7 @@ class Opal:
         rshank_idx = self.device_ids.index(self.device_labels['R Shank'])
         rfoot_idx = self.device_ids.index(self.device_labels['R Foot'])
         axis_rshank, axis_rfoot = self._calculate_joint_axis(self.X[rshank_idx], self.X[rfoot_idx], 
-                                                             self.data[rshank_idx][:,0:2], self.data[rfoot_idx][:,0:2])
+                                                             self.data[rshank_idx][:,0:3], self.data[rfoot_idx][:,0:3])
         self.IMU2anatomical_rot['R Shank'] = self._calc_rot_from_axis(axis_rshank)
         self.IMU2anatomical_rot['R Foot'] = self._calc_rot_from_axis(axis_rfoot)
 
@@ -127,11 +128,11 @@ class Opal:
         """
         for sensor in len(self.data):
             data = self.data[sensor]
-            accl = data[:, 0:2]
-            gyro = data[:, 3:5] 
+            accl = data[:, 0:3]
+            gyro = data[:, 3:6] 
 
             # Initialization
-            n, m = data.size
+            n, m = data.shape
             X_all = np.zeros((n, 4))                                    # quaternion state
             P_all = np.zeros((4, 4, n))                                 # error covariance matrix
             bias_w = np.array([0, 0, 0])                                # gyroscope bias   
@@ -143,7 +144,7 @@ class Opal:
             initX = np.array([1, 0, 0, 0])                              # can change to better initial prediction
             initP = np.eye(4) * 1e-4                                    # can change to better initial prediction
             X_all[1,:] = initX
-            P_all[1,:] = initP
+            P_all[:,:,1] = initP
             x = initX
             P = initP
 
@@ -161,12 +162,12 @@ class Opal:
                               [x[0], -x[3], x[2]],
                               [x[3], x[0], -x[1]],
                               [-x[2], x[1], x[0]]]) / 2
-                Q = (self.dt ** 2) * C @ (noise_w * np.eye(3)) @ C      # process noise matrix
+                Q = np.matmul(np.matmul((self.dt ** 2) * C, (noise_w * np.eye(3))), C.T)      # process noise matrix
 
                 # Propagate the state and covariance
-                x = FD @ x
-                x = x / np.norm(x)                                      # normalize
-                P = FD @ P @ FD.T + Q 
+                x = np.matmul(FD, x)
+                x = x / np.linalg.norm(x)                                      # normalize
+                P = np.matmul(np.matmul(FD, P), FD.T) + Q 
 
                 # ========= Measurement Update ========= 
                 a = accl[i, :] - bias_a
@@ -181,7 +182,7 @@ class Opal:
                                        [x[0], -x[1], -x[2], x[3]]])     # measurement matrix
 
                 # Measurement noise R is appropriate when the acceleration magnitude is approximately equal to gravity
-                check = abs(np.norm(a) - gc)
+                check = abs(np.linalg.norm(a) - gc)
                 epsilon = 0.05                                          # tolerance
 
                 if check < epsilon:
@@ -190,10 +191,10 @@ class Opal:
                     R = np.eye(3) * 100
 
                 # ========= Kalman Update ========= 
-                K = P @ H.T @ np.linalg.inv(H @ P @ H.T + R)
-                x = x + K @ (a.T - a_pred)
-                x = x / np.norm(x)                                      # normalize
-                P = (np.eye(4) - K @ H) @ P
+                K = np.matmul(np.matmul(P, H.T), np.linalg.inv(np.matmul(np.matmul(H, P), H.T) + R))
+                x = x + np.matmul(K, (a.T - a_pred))
+                x = x / np.linalg.norm(x)                                      # normalize
+                P = np.matmul((np.eye(4) - np.matmul(K, H)), P)
 
                 #  ========= Append to variables ========= 
                 X_all[i, :] = x
@@ -215,26 +216,29 @@ class Opal:
         ------
         eul_mat: (N, 3) array of euler angles where N is the number of observations and the euler angles are expressed as (X, Y, Z) rotations or (roll, pitch, yaw)
         """
-        w = quat_mat[:,0]
-        x = quat_mat[:,1]
-        y = quat_mat[:,2]
-        z = quat_mat[:,3]
+        # w = quat_mat[:,0]
+        # x = quat_mat[:,1]
+        # y = quat_mat[:,2]
+        # z = quat_mat[:,3]
         
-        t0 = 2.0 * (w*x + y*z)
-        t1 = 1.0 - 2.0 * (x*x + y*y)
-        rot_x = np.arctan2(t0, t1)
+        # t0 = 2.0 * (w*x + y*z)
+        # t1 = 1.0 - 2.0 * (x*x + y*y)
+        # rot_x = np.arctan2(t0, t1)
 
-        t2 = 2.0 * (w*y - z*x)
-        t2 = 1.0 if t2 > 1.0 else t2                                    # enforce max and min values of 1.0 and -1.0
-        t2 = -1.0 if t2 < 1.0 else t2
-        rot_y = np.arctan2(t2)
+        # t2 = 2.0 * (w*y - z*x)
+        # t2 = 1.0 if t2 > 1.0 else t2                                    # enforce max and min values of 1.0 and -1.0
+        # t2 = -1.0 if t2 < 1.0 else t2
+        # rot_y = np.arctan2(t2)
 
-        t3 = 2.0 * (w*z + x*y)
-        t4 = 1.0 - 2.0 * (y*y + z*z)
-        rot_z = np.arctan2(t3, t4)
+        # t3 = 2.0 * (w*z + x*y)
+        # t4 = 1.0 - 2.0 * (y*y + z*z)
+        # rot_z = np.arctan2(t3, t4)
 
-        eul_mat = np.hstack(rot_x, rot_y, rot_z)
-        return eul_mat
+        # eul_mat = np.hstack((rot_x, rot_y, rot_z))
+        # return eul_mat
+        quat_wlast = np.hstack([quat_mat[:, 1:], quat_mat[:, 0].reshape(-1, 1)])
+        r = R.from_quat(quat_wlast)
+        return r.as_euler('xyz', degrees=True)
     
     def _rad2deg(self, rad):
         """
@@ -260,8 +264,8 @@ class Opal:
         gyro_A_ = gyro_A.reshape((N, 3, 1))
         gyro_B_ = gyro_B.reshape((N, 3, 1))
 
-        R_BA = R_A @ np.transpose(R_B, (0, 2, 1))                           # transpose last two dimensions, results in (N, 3, 3)
-        w_rel_frameA = R_BA @ np.transpose(gyro_B_, (0, 2, 1)) - np.transpose(gyro_A_, (0, 2, 1))
+        R_BA = np.matmul(R_A, np.transpose(R_B, (0, 2, 1)))                           # transpose last two dimensions, results in (N, 3, 3)
+        w_rel_frameA = np.matmul(R_BA, np.transpose(gyro_B_, (0, 2, 1))) - np.transpose(gyro_A_, (0, 2, 1))
         return w_rel_frameA.reshape((-1, 3))
     
     def _angular_vel_wrt_frameB(self, R_A, R_B, gyro_A, gyro_B):
@@ -273,8 +277,8 @@ class Opal:
         gyro_A_ = gyro_A.reshape((N, 3, 1))
         gyro_B_ = gyro_B.reshape((N, 3, 1))
 
-        R_AB = R_B @ np.transpose(R_A, (0, 2, 1))  
-        w_rel_frameB = np.transpose(gyro_B_, (0, 2, 1)) - R_AB @ np.transpose(gyro_A_, (0, 2, 1))
+        R_AB = np.matmul(R_B, np.transpose(R_A, (0, 2, 1)))  
+        w_rel_frameB = np.transpose(gyro_B_, (0, 2, 1)) - np.matmul(R_AB, np.transpose(gyro_A_, (0, 2, 1)))
         return w_rel_frameB.reshape((-1, 3))
 
     def _pc_axis(self, w_rel_frame_array):
@@ -288,7 +292,7 @@ class Opal:
 
         # Note: the estimated axis can converge to align with z or -z axis. Check if the axis is aligned with thigh z frame.
         # If the angle between the thigh x and estimated axis is less than 100, then it converged to align with +x instead of -x axis.
-        cos_th = np.dot(axis, [1, 0, 0]) / (np.norm(axis) * np.norm([1, 0, 0]))
+        cos_th = np.dot(axis, [1, 0, 0]) / (np.linalg.norm(axis) * np.linalg.norm([1, 0, 0]))
         ang = np.arccos(cos_th) * 180 / np.pi
         if ang < 100:
             # axis converged to negative of the desired axis
@@ -313,7 +317,7 @@ class Opal:
         z_T = axis
         y_init = [0, 1, 0]
         x_T = np.cross(y_init, z_T)
-        x_T = x_T / np.norm(x_T)
+        x_T = x_T / np.linalg.norm(x_T)
         y_T = np.cross(z_T, x_T)
         
         return np.hstack(x_T, y_T, z_T)
@@ -334,7 +338,7 @@ class Opal:
         R_AA_AB: rotation from anatomical frame AA to anatomical frame AB
 
         """
-        R_AA_AB = R_AA.T @ R_A @ np.transpose(R_B, (0, 2, 1)) @ R_AB
+        R_AA_AB = np.matmul(np.matmul(np.matmul(R_AA.T, R_A), np.transpose(R_B, (0, 2, 1))), R_AB)
         return R_AA_AB
     
     def _ang_from_rot(self, R_AA_AB):
