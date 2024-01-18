@@ -35,7 +35,8 @@ class Opal:
             self.data.append(np.empty((0, 6)))                          # initialize list of empty arrays for data, 6 columns (x,y,z gyro and accel)
             self.X.append(np.empty((0, 4)))                             # initialize list of empty arrays for quaternion states 
             self.P.append(np.empty((4, 4, 0)))                          # initialize list of empty arrays for error covariance matrices
-            ## need to match device ids with device labels (back, thigh, shank, foot for left and right )
+            ## TODO: need to match device ids with device labels (back, thigh, shank, foot for left and right )
+            ##       Initial thought is to use a json file to prestore device IDs and labels, assuming that they do not change. 
 
     def update_data(self):
         try:
