@@ -44,7 +44,7 @@ class Opal:
             self.csv_writer.write(sensor_data)
             self._append_data(sensor_data)
             self._EKF
-            self.update_data
+            self._update_joint_angles
         except Exception as e:
             self.logger.logger.error("Could not retrieve sensor data. Error: {0}"
                 .format(e))
@@ -84,43 +84,13 @@ class Opal:
         self.IMU2anatomical_rot['R Shank'] = self._calc_rot_from_axis(axis_rshank)
         self.IMU2anatomical_rot['R Foot'] = self._calc_rot_from_axis(axis_rfoot)
 
-    def update_joint_angles(self):
-        """
-        Updates joint angle estimates using links surrounding the joint. 
-        """
-        # Find device id indices from device labels to access data and IMU to anatomical rotation matrices 
-        torso_idx = self.device_ids.index(self.device_labels['Torso'])
-        lthigh_idx = self.device_ids.index(self.device_labels['L Thigh'])
-        rthigh_idx = self.device_ids.index(self.device_labels['R Thigh'])
-        lshank_idx = self.device_ids.index(self.device_labels['L Shank'])
-        lfoot_idx = self.device_ids.index(self.device_labels['L Foot'])
-        rshank_idx = self.device_ids.index(self.device_labels['R Shank'])
-        rfoot_idx = self.device_ids.index(self.device_labels['R Foot'])
-
-        # Hip angle estimates, saggital flexion/extension is stored in first dimension
-        self.joint_angles['L Hip'] = self._calculate_joint_angle(self.X[torso_idx], self.X[lthigh_idx],
-                                                                 self.IMU2anatomical_rot['Torso'], self.IMU2anatomical_rot['L Thigh'])
-        self.joint_angles['R Hip'] = self._calculate_joint_angle(self.X[torso_idx], self.X[rthigh_idx],
-                                                                 self.IMU2anatomical_rot['Torso'], self.IMU2anatomical_rot['R Thigh'])
-        
-        # Knee angle estimates, saggital flexion/extension is stored in first dimension
-        self.joint_angles['L Knee'] = self._calculate_joint_angle(self.X[lthigh_idx], self.X[lshank_idx],
-                                                                 self.IMU2anatomical_rot['L Thigh'], self.IMU2anatomical_rot['L Shank'])
-        self.joint_angles['R Knee'] = self._calculate_joint_angle(self.X[rthigh_idx], self.X[rshank_idx],
-                                                                 self.IMU2anatomical_rot['R Thigh'], self.IMU2anatomical_rot['R Shank'])
-        
-        # Knee angle estimates, dorsiflexion/plantarflexion is stored in first dimension
-        self.joint_angles['L Ankle'] = self._calculate_joint_angle(self.X[lshank_idx], self.X[lfoot_idx],
-                                                                 self.IMU2anatomical_rot['L Shank'], self.IMU2anatomical_rot['L Foot'])
-        self.joint_angles['R Ankle'] = self._calculate_joint_angle(self.X[rshank_idx], self.X[rfoot_idx],
-                                                                 self.IMU2anatomical_rot['R Shank'], self.IMU2anatomical_rot['R Foot'])
 
     ################################# INTERNAL FUNCTIONS ####################################
     
     def _append_data(self, sensor_data):
         for idx, device_data in enumerate(sensor_data):
             self.data[idx] = np.append(self.data[idx], device_data[2:7])   # only extract and store gyro and accel data 
-            # need to limit array size to window_size
+            # TODO: need to limit array size to window_size
 
     def _EKF(self):
         """ Implementation of Extended Kalman Filter on IMU data (gyroscope and accelerometer). 
@@ -360,6 +330,35 @@ class Opal:
         joint_angle = self._ang_from_rot(R_AA_AB)
         return joint_angle
 
+    def _update_joint_angles(self):
+        """
+        Updates joint angle estimates using links surrounding the joint. 
+        """
+        # Find device id indices from device labels to access data and IMU to anatomical rotation matrices 
+        torso_idx = self.device_ids.index(self.device_labels['Torso'])
+        lthigh_idx = self.device_ids.index(self.device_labels['L Thigh'])
+        rthigh_idx = self.device_ids.index(self.device_labels['R Thigh'])
+        lshank_idx = self.device_ids.index(self.device_labels['L Shank'])
+        lfoot_idx = self.device_ids.index(self.device_labels['L Foot'])
+        rshank_idx = self.device_ids.index(self.device_labels['R Shank'])
+        rfoot_idx = self.device_ids.index(self.device_labels['R Foot'])
 
+        # Hip angle estimates, saggital flexion/extension is stored in first dimension
+        self.joint_angles['L Hip'] = self._calculate_joint_angle(self.X[torso_idx], self.X[lthigh_idx],
+                                                                 self.IMU2anatomical_rot['Torso'], self.IMU2anatomical_rot['L Thigh'])
+        self.joint_angles['R Hip'] = self._calculate_joint_angle(self.X[torso_idx], self.X[rthigh_idx],
+                                                                 self.IMU2anatomical_rot['Torso'], self.IMU2anatomical_rot['R Thigh'])
+        
+        # Knee angle estimates, saggital flexion/extension is stored in first dimension
+        self.joint_angles['L Knee'] = self._calculate_joint_angle(self.X[lthigh_idx], self.X[lshank_idx],
+                                                                 self.IMU2anatomical_rot['L Thigh'], self.IMU2anatomical_rot['L Shank'])
+        self.joint_angles['R Knee'] = self._calculate_joint_angle(self.X[rthigh_idx], self.X[rshank_idx],
+                                                                 self.IMU2anatomical_rot['R Thigh'], self.IMU2anatomical_rot['R Shank'])
+        
+        # Knee angle estimates, dorsiflexion/plantarflexion is stored in first dimension
+        self.joint_angles['L Ankle'] = self._calculate_joint_angle(self.X[lshank_idx], self.X[lfoot_idx],
+                                                                 self.IMU2anatomical_rot['L Shank'], self.IMU2anatomical_rot['L Foot'])
+        self.joint_angles['R Ankle'] = self._calculate_joint_angle(self.X[rshank_idx], self.X[rfoot_idx],
+                                                                 self.IMU2anatomical_rot['R Shank'], self.IMU2anatomical_rot['R Foot'])
 
 
