@@ -27,6 +27,12 @@ class Opal:
         self.IMU2anatomical_rot = dict()
         self.joint_angles = dict()
 
+    def configure(self):
+        SensorConfig.configure() # APDM sensors must be configured prior to streaming
+        print("Remove the sensors from the docking station. Wait until the " +
+            "sensors and the access point are all flashing green in unison " + 
+            "before streaming.")
+
     def start_streaming(self):
         self.stream.start()
         self.n_sensors = len(self.stream.device_ids)
