@@ -253,7 +253,8 @@ class Opal:
         """
         quat_wlast = np.hstack([quat[:, 1:], quat[:, 0].reshape(-1,1)])                   # convert to scalar-last notation for scipy Rotation function
         r = R.from_quat(quat_wlast)
-        return r.as_dcm()
+        rot = r.as_dcm() # returns rotation matrix that is the transpose of Matlab output
+        return rot.transpose((0,2,1))
     
     def _angular_vel_wrt_frameA(self, R_A, R_B, gyro_A, gyro_B):
         """ 
