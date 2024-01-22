@@ -14,7 +14,7 @@ class Opal:
     def __init__(self):
         self.stream = SensorStream()
         self.csv_writer = StreamCsvWriter()
-        self.logger = AppLogger()
+        self.logger = AppLogger(__name__)
         self.update_rate = 100 # Hz
         self.dt = 1 / self.update_rate # seconds
         self.window_size = 5 * self.update_rate # 5 seconds of data
