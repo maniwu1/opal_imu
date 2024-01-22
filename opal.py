@@ -72,7 +72,7 @@ class Opal:
         """ 
 
         # Calculate torso, left hip, and right hip rotation matrices
-        torso_idx = self.device_ids.index(self.device_labels['Torso'])
+        torso_idx = self.device_ids.index(self.device_labels['Back'])
         lthigh_idx = self.device_ids.index(self.device_labels['L Thigh'])
         rthigh_idx = self.device_ids.index(self.device_labels['R Thigh'])
 
@@ -81,7 +81,7 @@ class Opal:
         axis_torso2, axis_rthigh = self._calculate_joint_axis(self.X[torso_idx], self.X[rthigh_idx], 
                                                              self.data[torso_idx][:,0:3], self.data[rthigh_idx][:,0:3])
         
-        self.IMU2anatomical_rot['Torso'] = self._calc_rot_from_axis(axis_torso)
+        self.IMU2anatomical_rot['Back'] = self._calc_rot_from_axis(axis_torso)
         self.IMU2anatomical_rot['L Thigh'] = self._calc_rot_from_axis(axis_lthigh)
         self.IMU2anatomical_rot['R Thigh'] = self._calc_rot_from_axis(axis_rthigh)
 
@@ -352,7 +352,7 @@ class Opal:
         Updates joint angle estimates using links surrounding the joint. 
         """
         # Find device id indices from device labels to access data and IMU to anatomical rotation matrices 
-        torso_idx = self.device_ids.index(self.device_labels['Torso'])
+        torso_idx = self.device_ids.index(self.device_labels['Back'])
         lthigh_idx = self.device_ids.index(self.device_labels['L Thigh'])
         rthigh_idx = self.device_ids.index(self.device_labels['R Thigh'])
         lshank_idx = self.device_ids.index(self.device_labels['L Shank'])
@@ -362,9 +362,9 @@ class Opal:
 
         # Hip angle estimates, saggital flexion/extension is stored in first dimension
         self.joint_angles['L Hip'] = self._calculate_joint_angle(self.X[torso_idx], self.X[lthigh_idx],
-                                                                 self.IMU2anatomical_rot['Torso'], self.IMU2anatomical_rot['L Thigh'])
+                                                                 self.IMU2anatomical_rot['Back'], self.IMU2anatomical_rot['L Thigh'])
         self.joint_angles['R Hip'] = self._calculate_joint_angle(self.X[torso_idx], self.X[rthigh_idx],
-                                                                 self.IMU2anatomical_rot['Torso'], self.IMU2anatomical_rot['R Thigh'])
+                                                                 self.IMU2anatomical_rot['Back'], self.IMU2anatomical_rot['R Thigh'])
         
         # Knee angle estimates, saggital flexion/extension is stored in first dimension
         self.joint_angles['L Knee'] = self._calculate_joint_angle(self.X[lthigh_idx], self.X[lshank_idx],
