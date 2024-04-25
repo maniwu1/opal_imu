@@ -128,7 +128,7 @@ class Opal:
             noise_a = 0.0                                               # accelerometer error variance
             gc = 9.81                                                   # gravity magnitude, m/s^2
 
-            initX = np.array([1, 0, 0, 0])                              # can change to better initial prediction
+            initX = np.array([math.cos(np.pi/4), math.sin(np.pi/4), 0, 0])   # can change to better initial prediction
             initP = np.eye(4) * 1e-4                                    # can change to better initial prediction
             X_all[1,:] = initX
             P_all[:,:,1] = initP
@@ -160,8 +160,8 @@ class Opal:
                 a = accl[i, :] - bias_a
 
                 # Use non-linear equation to estimate prediction
-                a_pred = gc * np.array([[2*x[1]*x[3] - x[0]*x[2]], 
-                                        [2*x[2]*x[3] + x[0]*x[2]], 
+                a_pred = gc * np.array([[2*(x[1]*x[3] - x[0]*x[2])], 
+                                        [2*(x[2]*x[3] + x[0]*x[1])], 
                                         [x[0]**2 - x[1]**2 - x[2]**2 + x[3]**2]])
                 
                 H = 2 * gc * np.array([[-x[2], x[3], -x[0], x[1]],
@@ -203,26 +203,6 @@ class Opal:
         ------
         eul_mat: (N, 3) array of euler angles where N is the number of observations and the euler angles are expressed as (X, Y, Z) rotations or (roll, pitch, yaw)
         """
-        # w = quat_mat[:,0]
-        # x = quat_mat[:,1]
-        # y = quat_mat[:,2]
-        # z = quat_mat[:,3]
-        
-        # t0 = 2.0 * (w*x + y*z)
-        # t1 = 1.0 - 2.0 * (x*x + y*y)
-        # rot_x = np.arctan2(t0, t1)
-
-        # t2 = 2.0 * (w*y - z*x)
-        # t2 = 1.0 if t2 > 1.0 else t2                                    # enforce max and min values of 1.0 and -1.0
-        # t2 = -1.0 if t2 < 1.0 else t2
-        # rot_y = np.arctan2(t2)
-
-        # t3 = 2.0 * (w*z + x*y)
-        # t4 = 1.0 - 2.0 * (y*y + z*z)
-        # rot_z = np.arctan2(t3, t4)
-
-        # eul_mat = np.hstack((rot_x, rot_y, rot_z))
-        # return eul_mat
         quat_wlast = np.hstack([quat_mat[:, 1:], quat_mat[:, 0].reshape(-1, 1)])
         r = R.from_quat(quat_wlast)
         return r.as_euler(seq, degrees=True)
